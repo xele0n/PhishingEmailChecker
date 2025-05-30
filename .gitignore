@@ -1,1 +1,4 @@
 phishing_model.pth
+checkpoints/checkpoint_epoch_0_batch_118.pth
+checkpoints/checkpoint_epoch_0_batch_420.pth
+checkpoints/latest_checkpoint.pth

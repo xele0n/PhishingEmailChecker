@@ -27,7 +27,7 @@ pip install -r requirements.txt
 python app.py
 ```
 
-4. Open your browser and navigate to `http://localhost:5000`
+4. Open your browser and navigate to `http://127.0.0.1:5000/`
 
 ## Model Details
 The model uses a transformer-based architecture trained on the Phishing Email Dataset from Kaggle. It analyzes various features of emails including:

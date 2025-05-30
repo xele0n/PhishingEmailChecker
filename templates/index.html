@@ -28,11 +28,88 @@
             text-align: center;
             margin: 20px 0;
         }
+        .model-status {
+            margin-bottom: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            background-color: #e9ecef;
+        }
+        .model-info {
+            font-size: 0.9em;
+            color: #6c757d;
+        }
+        .analysis-section {
+            margin-bottom: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #007bff;
+        }
+        .analysis-section.phishing-indicators {
+            border-left-color: #dc3545;
+            background-color: #f8d7da;
+        }
+        .analysis-section.suspicious-elements {
+            border-left-color: #fd7e14;
+            background-color: #fff3cd;
+        }
+        .analysis-section.legitimate-indicators {
+            border-left-color: #198754;
+            background-color: #d1e7dd;
+        }
+        .analysis-section.recommendations {
+            border-left-color: #0d6efd;
+            background-color: #cff4fc;
+        }
+        .analysis-section.model-info {
+            border-left-color: #6f42c1;
+            background-color: #e2e3f0;
+        }
+        .analysis-section h4 {
+            margin-bottom: 10px;
+            font-size: 1.1em;
+            font-weight: bold;
+        }
+        .analysis-point {
+            margin: 8px 0;
+            padding: 8px 12px;
+            background-color: rgba(255,255,255,0.7);
+            border-radius: 4px;
+            border-left: 3px solid #007bff;
+        }
+        .risk-assessment {
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-weight: bold;
+            text-align: center;
+            font-size: 1.2em;
+        }
+        .risk-high { background-color: #f8d7da; color: #721c24; border: 2px solid #dc3545; }
+        .risk-medium-high { background-color: #fff3cd; color: #856404; border: 2px solid #fd7e14; }
+        .risk-medium { background-color: #fff3cd; color: #664d03; border: 2px solid #ffc107; }
+        .risk-low { background-color: #d1e7dd; color: #0f5132; border: 2px solid #198754; }
+        .risk-very-low { background-color: #d1e7dd; color: #0a3622; border: 2px solid #20c997; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1 class="text-center mb-4">Phishing Email Checker</h1>
+        
+        <!-- Model Status Section -->
+        <div class="model-status" id="modelStatus">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <strong>Model Status:</strong> <span id="modelPath" class="model-info">Loading...</span>
+                </div>
+                <button type="button" class="btn btn-outline-primary btn-sm" id="reloadModelBtn">
+                    <span class="spinner-border spinner-border-sm me-2" style="display: none;" id="reloadSpinner"></span>
+                    Reload Model
+                </button>
+            </div>
+            <div class="mt-2">
+                <small class="text-muted">💡 Use this button to load newer checkpoints while training is running</small>
+            </div>
+        </div>
         
         <ul class="nav nav-tabs mb-4" id="inputTabs" role="tablist">
             <li class="nav-item">
@@ -83,6 +160,60 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        // Load model info on page load
+        async function loadModelInfo() {
+            try {
+                const response = await fetch('/model-info');
+                const data = await response.json();
+                
+                if (data.model_loaded) {
+                    document.getElementById('modelPath').textContent = data.model_path;
+                    document.getElementById('modelStatus').className = 'model-status alert alert-success';
+                } else {
+                    document.getElementById('modelPath').textContent = 'No model loaded';
+                    document.getElementById('modelStatus').className = 'model-status alert alert-warning';
+                }
+            } catch (error) {
+                document.getElementById('modelPath').textContent = 'Error loading model info';
+                document.getElementById('modelStatus').className = 'model-status alert alert-danger';
+            }
+        }
+
+        // Reload model function
+        document.getElementById('reloadModelBtn').addEventListener('click', async () => {
+            const btn = document.getElementById('reloadModelBtn');
+            const spinner = document.getElementById('reloadSpinner');
+            
+            // Show loading state
+            btn.disabled = true;
+            spinner.style.display = 'inline-block';
+            
+            try {
+                const response = await fetch('/reload-model', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    document.getElementById('modelPath').textContent = data.model_path;
+                    document.getElementById('modelStatus').className = 'model-status alert alert-success';
+                    
+                    // Show success message briefly
+                    const originalText = btn.innerHTML;
+                    btn.innerHTML = '✅ Model Reloaded!';
+                    setTimeout(() => {
+                        btn.innerHTML = originalText;
+                    }, 2000);
+                } else {
+                    alert('Error reloading model: ' + data.error);
+                }
+            } catch (error) {
+                alert('Error reloading model: ' + error.message);
+            } finally {
+                // Hide loading state
+                btn.disabled = false;
+                spinner.style.display = 'none';
+            }
+        });
+
         function showLoading() {
             document.querySelector('.loading').style.display = 'block';
             document.getElementById('resultBox').style.display = 'none';
@@ -93,6 +224,11 @@
         }
 
         function showResults(data) {
+            if (data.error) {
+                alert('Error: ' + data.error);
+                return;
+            }
+            
             const resultBox = document.getElementById('resultBox');
             const progressBar = resultBox.querySelector('.progress-bar');
             const analysisPoints = document.getElementById('analysisPoints');
@@ -111,12 +247,117 @@
                 progressBar.className = 'progress-bar bg-success';
             }
             
-            // Update analysis points
-            analysisPoints.innerHTML = data.analysis.map(point => 
-                `<div class="alert alert-info">${point}</div>`
+            // Process and display analysis with proper formatting
+            let analysisHTML = '';
+            let currentSection = '';
+            let currentSectionContent = [];
+            
+            data.analysis.forEach((point, index) => {
+                // Clean up markdown formatting
+                const cleanPoint = point.replace(/\*\*/g, '');
+                
+                // Check if this is a section header
+                if (cleanPoint.includes('HIGH RISK') || cleanPoint.includes('MEDIUM-HIGH RISK') || 
+                    cleanPoint.includes('MEDIUM RISK') || cleanPoint.includes('LOW RISK') || 
+                    cleanPoint.includes('VERY LOW RISK')) {
+                    
+                    // Add risk assessment section
+                    let riskClass = 'risk-medium';
+                    if (cleanPoint.includes('HIGH RISK')) riskClass = 'risk-high';
+                    else if (cleanPoint.includes('MEDIUM-HIGH RISK')) riskClass = 'risk-medium-high';
+                    else if (cleanPoint.includes('LOW RISK') && !cleanPoint.includes('VERY LOW')) riskClass = 'risk-low';
+                    else if (cleanPoint.includes('VERY LOW RISK')) riskClass = 'risk-very-low';
+                    
+                    analysisHTML += `<div class="risk-assessment ${riskClass}">${cleanPoint}</div>`;
+                    
+                } else if (cleanPoint.includes('Phishing Indicators Found:')) {
+                    // Start phishing indicators section
+                    if (currentSection && currentSectionContent.length > 0) {
+                        analysisHTML += buildSection(currentSection, currentSectionContent);
+                    }
+                    currentSection = 'phishing-indicators';
+                    currentSectionContent = [];
+                    
+                } else if (cleanPoint.includes('Suspicious Elements:')) {
+                    // Start suspicious elements section
+                    if (currentSection && currentSectionContent.length > 0) {
+                        analysisHTML += buildSection(currentSection, currentSectionContent);
+                    }
+                    currentSection = 'suspicious-elements';
+                    currentSectionContent = [];
+                    
+                } else if (cleanPoint.includes('Legitimate Indicators:')) {
+                    // Start legitimate indicators section
+                    if (currentSection && currentSectionContent.length > 0) {
+                        analysisHTML += buildSection(currentSection, currentSectionContent);
+                    }
+                    currentSection = 'legitimate-indicators';
+                    currentSectionContent = [];
+                    
+                } else if (cleanPoint.includes('Recommendations:') || cleanPoint.includes('General Security Tips:')) {
+                    // Start recommendations section
+                    if (currentSection && currentSectionContent.length > 0) {
+                        analysisHTML += buildSection(currentSection, currentSectionContent);
+                    }
+                    currentSection = 'recommendations';
+                    currentSectionContent = [];
+                    
+                } else if (cleanPoint.includes('AI Model Confidence:')) {
+                    // Add model confidence section
+                    if (currentSection && currentSectionContent.length > 0) {
+                        analysisHTML += buildSection(currentSection, currentSectionContent);
+                    }
+                    analysisHTML += `
+                        <div class="analysis-section model-info">
+                            <h4>🤖 AI Model Analysis</h4>
+                            <div class="analysis-point">${cleanPoint}</div>
+                        </div>
+                    `;
+                    currentSection = '';
+                    currentSectionContent = [];
+                    
+                } else if (cleanPoint.trim().startsWith('•') || cleanPoint.trim().startsWith('🚨') || 
+                          cleanPoint.trim().startsWith('🔐') || cleanPoint.trim().startsWith('⚠️') ||
+                          cleanPoint.trim().startsWith('💰') || cleanPoint.trim().startsWith('📧') ||
+                          cleanPoint.trim().startsWith('📝') || cleanPoint.trim().startsWith('💸') ||
+                          cleanPoint.trim().startsWith('🔗') || cleanPoint.trim().startsWith('🎭') ||
+                          cleanPoint.trim().startsWith('✅') || cleanPoint.trim().startsWith('🔍')) {
+                    // Add to current section content
+                    if (currentSection) {
+                        currentSectionContent.push(cleanPoint);
+                    }
+                }
+            });
+            
+            // Add any remaining section
+            if (currentSection && currentSectionContent.length > 0) {
+                analysisHTML += buildSection(currentSection, currentSectionContent);
+            }
+            
+            analysisPoints.innerHTML = analysisHTML;
+            resultBox.style.display = 'block';
+        }
+        
+        function buildSection(sectionType, content) {
+            const sectionTitles = {
+                'phishing-indicators': '🚩 Phishing Indicators Found',
+                'suspicious-elements': '🔍 Suspicious Elements',
+                'legitimate-indicators': '✅ Legitimate Indicators',
+                'recommendations': '🛡️ Recommendations & Security Tips'
+            };
+            
+            const title = sectionTitles[sectionType] || 'Analysis';
+            
+            let contentHTML = content.map(point => 
+                `<div class="analysis-point">${point}</div>`
             ).join('');
             
-            resultBox.style.display = 'block';
+            return `
+                <div class="analysis-section ${sectionType}">
+                    <h4>${title}</h4>
+                    ${contentHTML}
+                </div>
+            `;
         }
 
         document.getElementById('textForm').addEventListener('submit', async (e) => {
@@ -154,6 +395,9 @@
             hideLoading();
             showResults(data);
         });
+
+        // Load model info when page loads
+        window.addEventListener('load', loadModelInfo);
     </script>
 </body>
 </html> 
