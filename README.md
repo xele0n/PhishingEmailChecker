@@ -38,4 +38,4 @@ The model uses a transformer-based architecture trained on the Phishing Email Da
 - Language patterns
 
 ## Dataset
-The model is trained on the "Phishing Email Dataset" from Kaggle, which contains thousands of labeled phishing and legitimate emails. 
+The model is trained on the "Phishing Email Dataset" from Kaggle, which contains thousands of labeled phishing and legitimate emails. It takes a while to train, I am yet to optimise it.
